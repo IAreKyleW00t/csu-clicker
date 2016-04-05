@@ -1,0 +1,21 @@
+/* TEAM * /
+    Team Lead: Kyle Colantonio
+    Contact: k@yle.sh
+    Location: Brunswick, Ohio, United States
+
+    Team Member: James Saporito
+    Contact: jimsaporito@yahoo.com
+    Location: Cleveland, Ohio, United States
+
+    Team Member: Ali Almarhoon
+    Contact: almarhoon.ali@gmail.com
+    Location: Cleveland, Ohio, United States
+
+/* THANKS */
+    Ben Blake
+    Jameson Daosavanh
+
+/* SITE */
+    Last update: 02/03/2016
+    Standards: HTML5, CSS3, PHP5, MySQL
+    Components: jQuery, Respond.js, Modernizr, Bootstrap, Bootstrap Material Design, noUiSlider, dropdown.js, snackbar.js, Cookie Consent, reCAPTCHA2
