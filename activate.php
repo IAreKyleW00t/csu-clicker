@@ -23,7 +23,7 @@
 
         /* Attempt to find the token ID and user this token belongs to. Since we are activating an account,
             we will filter the results to only include REGISTER tokens. */
-        $query = $sql->prepare('SELECT id AS token_id, user_id FROM account_tokens WHERE token = ? AND type = ? LIMIT 1');
+        $query = $sql->prepare('SELECT id AS token_id, user_id, expires_on FROM account_tokens WHERE token = ? AND type = ? LIMIT 1');
         $query->execute(array(
             $token,
             'REGISTER'
@@ -40,11 +40,25 @@
         $row = $query->fetch(PDO::FETCH_ASSOC); //Save entire row
         $token_id = $row['token_id'];
         $user_id = $row['user_id'];
+        $expires_on = strtotime($row['expires_on']);
+        
+        /* Check if the token has expired. If so, delete it from the database and
+            tell the user to generate a new one. */
+        if ($expires_on - time() <= 0) {
+            $query = $sql->prepare('DELETE FROM account_tokens WHERE id = ?');
+            $query->execute(array(
+                $token_id
+            ));
+            
+            $_SESSION['ERROR'] = "Token has expired.<br>Please generate a new one.";
+            header('Location: /'); //Redirect to index
+            exit;
+        }
 
         /* Activate the account this token belongs to. */
-        $query = $sql->prepare('UPDATE accounts SET activated = ? WHERE id = ?');
+        $query = $sql->prepare('UPDATE accounts SET permission_level = ? WHERE id = ?');
         $query->execute(array(
-            TRUE,
+            1,
             $user_id
         ));
 

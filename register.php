@@ -13,21 +13,22 @@
 
     /* Check if request method is POST. */
     if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-        /* Check if we have a referrer and default to our
-            index page if it was not provided. */
-        $referrer = "/";
+        /* Check if we have a referrer and default to the
+            current page if it was not provided. */
+        $referrer = $_SERVER['PHP_SELF'];
         if (isset($_POST['referrer'])) {
             $referrer = $_POST['referrer'];
         }
         
-        /* Validate all POST input. These should always be valid. */
+        /* Validate all other POST input. These should always be valid since
+            they are filled via a form on this page. */
         if (!isset($_POST['first_name']) || !isset($_POST['last_name']) || !isset($_POST['email']) || !isset($_POST['user_id']) || !isset($_POST['password']) || !isset($_POST['password_confirm']) || !isset($_POST['g-recaptcha-response'])) {
-            $_SESSION['ERROR'] = "Invalid POST request.<br>Please try again.";
+            $_SESSION['ERROR'] = "Could not process request.<br>Please try again.";
             header('Location: ' . $referrer); //Redirect to previous page
             exit;
         }
 
-        /* Check if email is valid. This should always be true. */
+        /* Check to make sure the email address is valid. (Should always be true.) */
         $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $_SESSION['ERROR'] = "Invalid email address.<br>Please try again.";
@@ -35,17 +36,15 @@
             exit;
         }
 
-        /* Check if ID is valid. This should always be true.
-            We also create specialized flags to prevent the user for going
-            outside the valid bounds of a CSU ID. */
+        /* Check if CSU ID is valid. (Should always be true.) */
         $flags = array(
             'options' => array(
                 'min_range' => 0000000,
                 'max_range' => 9999999
             )
         );
-        $id = filter_var($_POST['user_id'], FILTER_SANITIZE_NUMBER_INT);
-        if (!filter_var($id, FILTER_VALIDATE_INT, $flags)) {
+        $user_id = filter_var($_POST['user_id'], FILTER_SANITIZE_NUMBER_INT);
+        if (!filter_var($user_id, FILTER_VALIDATE_INT, $flags)) {
             $_SESSION['ERROR'] = "Invalid CSU ID.<br>Please try again.";
             header('Location: ' . $referrer); //Redirect to previous page
             exit;
@@ -65,27 +64,26 @@
             exit;
         }
 
-        /* Save our remaining POST input. (Sanitizing is not needed because we use prepared statements.) */
+        /* Save our POST input. (Sanitizing is not needed because we use prepared statements.) */
         $first_name = $_POST['first_name'];
         $last_name = $_POST['last_name'];
-        $password = $_POST['password'];
-
+        
         /* Hash the users password. For the best security, we use PASSWORD_DEFAULT
             since it will always used the "best" hashing algorithm at the time it is used.
             For extra security, we rotate the password by 13 characters before hashing. */
-        $hash = password_hash(str_rot13($password), PASSWORD_DEFAULT);
+        $hash = password_hash(str_rot13($_POST['password']), PASSWORD_DEFAULT);
 
-        /* Check to see if a user with this ID OR email exists already. If either of these are true
-            then we will throw an error since we do not allow duplicate emails or ID's. */
+        /* Check to see if a user with this ID OR email exists already. If either of these
+            are true, then we will deny the account creation and notify the user. */
         $query = $sql->prepare('SELECT 1 FROM accounts WHERE id = ? OR email = ? LIMIT 1');
         $query->execute(array(
-            $id,
+            $user_id,
             $email
         ));
         
-        /* If we do not get ZERO results back, then we know a user with that ID or email already exists. */
+        /* If we do not get EXACTLY zero rows back, then we know a user with that ID or email already exists. */
         if ($query->rowCount() != 0) {
-            $_SESSION['ERROR'] = "An account with that ID/Email already exists.<br><a href=\"/forgot_password.php\">Click here to recover your password.</a>";
+            $_SESSION['ERROR'] = "An account with that ID/email already exists.<br><a href=\"/forgot.php\">Click here to recover your password.</a>";
             header('Location: ' . $referrer); //Redirect to previous page
             exit;
         }
@@ -94,7 +92,7 @@
             account creation process by adding their information into the database. */
         $query = $sql->prepare('INSERT INTO accounts (id, first_name, last_name, email, hash) VALUES (?, ?, ?, ?, ?)');
         $query->execute(array(
-            $id,
+            $user_id,
             $first_name,
             $last_name,
             $email,
@@ -103,23 +101,25 @@
 
         /* Create a unique token for our the user to activate their password with. */
         $token = bin2hex(mcrypt_create_iv(16, MCRYPT_DEV_URANDOM));
+        
+        /* Create an expiry time for this token. */
+        $expires_on = date('Y-m-d H:i:s', strtotime('+30 minutes'));
 
-        /* Insert our new REGISTER token into the database so it can be used later. This token can
-            only be used with the account that created/requested it. This token will automatically expire
-            in 30 minutes after being created. For the user to get a new token they must attempt to login
-            and a new one will be sent automatically. */
-        $query = $sql->prepare('INSERT INTO account_tokens (user_id, token, type) VALUES (?, ?, ?)');
+        /* Insert a new REGISTER token into the database so it can be used later. This token can
+            only be used with the account that created/requested it and will automatically expire
+            in 30 minutes after being created. If the user needs a new token then they must attempt
+            to login and the system will automatically generate a new token for them. */
+        $query = $sql->prepare('INSERT INTO account_tokens (user_id, token, type, expires_on) VALUES (?, ?, ?, ?)');
         $query->execute(array(
-            $id,
+            $user_id,
             $token,
-            'REGISTER'
+            'REGISTER',
+            $expires_on
         ));
 
         /* Email-related variables. */
         $from = "no-reply@csuoh.io";
         $subject = 'CSUClicker: Account Activation';
-        
-        /* Format the email message so it is easier for the end-user to read. */
         $message = "Thanks for signing up to use the CSU Clicker app! Click the link below to be finish activating your account.\r\n\r\n"
                  . "Please note this link will expire in 30 minutes! If you need a new activation link, simply login and new one will be sent to you.\r\n\r\n"
                  . "https://clicker.csuoh.io/activate.php?token=" . $token;
@@ -129,7 +129,7 @@
 
         /* Notify the user that their action was successful and redirect them to the login page. */
         $_SESSION['NOTICE'] = "Activation email sent to $email.<br><b>Please be sure to check your Spam/Junk folder!</b>";
-        header('Location: /login');
+        header('Location: /login.php');
         exit;
     }
 ?>
@@ -238,7 +238,7 @@
 
                                 <div class="row clearfix">
                                     <div class="col-xs-12">
-                                        <a href="/login" class="btn btn-sm btn-link btn-accent">Already have an account?</a>
+                                        <a href="/login.php" class="btn btn-sm btn-link btn-accent">Already have an account?</a>
                                     </div> <!-- /.col -->
                                 </div> <!-- /.row -->
 
@@ -246,7 +246,7 @@
                                     <div class="col-xs-12">
                                         <div class="text-right">
                                             <button id="submit-register" class="btn btn-raised btn-accent" type="submit">Submit</button>
-                                            <a href="/login" id="cancel-register" class="btn btn-default">Cancel</a>
+                                            <a href="javascript:history.back();" id="cancel-register" class="btn btn-default">Cancel</a>
                                         </div> <!-- /.text-right -->
                                     </div> <!-- /.col -->
                                 </div> <!-- /.row -->
@@ -260,5 +260,13 @@
         <?php include 'inc/footer.php'; ?>
         <?php include 'inc/notice.php'; ?>
         <?php include 'inc/error.php'; ?>
+        
+        <!-- Custom JavaScript -->
+        <script>
+            /* Set the "Cancel" button to be what the previous page was. */
+            $(document).ready(function() {
+                $('#cancel-register').attr('href', document.referrer);
+            });
+        </script>
     </body>
 </html>

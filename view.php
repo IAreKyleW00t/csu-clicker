@@ -1,6 +1,6 @@
 <?php
-    require_once('inc/session.php');
-    $sql = include('inc/sql_connection.php');
+    require_once 'inc/session.php';
+    $sql = include 'inc/sql_connection.php';
 
     /* Check if user is logged in. If not, silently redirect them
         to the index page. */
@@ -9,7 +9,7 @@
         exit;
     }
 
-    /* Validate all GET input. If this is invalid then the user did not specify a set number in the URL. */
+    /* Validate all GET input. If this is invalid then the user did not specify a question set ID in the URL. */
     if (!isset($_GET['id'])) {
         $_SESSION['ERROR'] = "Could not process request.<br>Please try again.";
         header('Location: /');
@@ -17,13 +17,13 @@
     }
 
     /* Save our GET input. (Sanitizing is not needed because we use prepared statements.) */
-    $id = $_GET['id'];
+    $set_id = $_GET['id'];
 
     /* Check if the current user is the owner of the question set. If they are not, then
-        deny them permission from viewing/editing the question set. */
+        deny them permission from viewing the question set. */
     $query = $sql->prepare('SELECT label FROM question_sets WHERE id = ? AND user_id = ? LIMIT 1');
     $query->execute(array(
-        $id,
+        $set_id,
         $_SESSION['USER_ID']
     ));
 
@@ -34,21 +34,23 @@
         exit;
     }
 
-    /* Save label for us to use later. */
-    $label = $query->fetch(PDO::FETCH_ASSOC)['label'];
+    /* Save the data from our search results. */
+    $row = $query->fetch(PDO::FETCH_ASSOC); //Save entire row
+    $label = $row['label'];
 
 
     /* Attempt to select all questions for the current question set and count
-        the total number of questions within the set. Sets without any questions will default to 0.
+        the total number of answers within each question. Questions without any answers will default to 0.
         If no questions are found, then the total rowCount will be 0. */
     $query = $sql->prepare('SELECT q.id, q.question, (SELECT COUNT(1) FROM answers a WHERE a.question_id = q.id) AS total_answers FROM questions q WHERE q.set_id = ?');
     $query->execute(array(
-        $id
+        $set_id
     ));
     
-    $rows = $query->fetchAll(PDO::FETCH_ASSOC);
+    /* Save the data from our search results. */
+    $rows = $query->fetchAll(PDO::FETCH_ASSOC); //Save all rows
     $total_questions = $query->rowCount();
-    $count = 1;
+    $count = 1; //Relative question number
 ?>
 <!DOCTYPE html>
 <!--[if lt IE 7]><html class="no-js lt-ie9 lt-ie8 lt-ie7" lang="en"><![endif]-->
@@ -81,8 +83,8 @@
 
                     <div class="collapse navbar-collapse">
                         <ul class="nav navbar-nav navbar-right">
-                            <li class="active"><a href="/panel">Panel</a></li>
-                            <li><a href="/logout">Logout</a></li>
+                            <li class="active"><a href="/panel.php">Panel</a></li>
+                            <li><a href="/logout.php">Logout</a></li>
                         </ul> <!-- /.navbar-nav -->
                     </div> <!-- /.navbar-collapse -->
                 </div> <!-- /.container -->
@@ -101,14 +103,9 @@
                                 </div> <!-- /.panel-heading -->
                                 
                                 <div class="panel-body">
-                                    <b>Label:</b> <?php echo $label; ?><br>
+                                    <b>Label:</b> <?php echo htmlspecialchars($label); ?><br>
                                     <b>Total Questions:</b> <?php echo $total_questions; ?><br>
-                                    <b>Unique ID:</b> <?php echo $id; ?><br><br>
-                                    <b>Total Views:</b> N/A<br>
-                                    <b>Total Responses:</b> N/A
-                                    <div class="progress">
-                                        <div class="progress-bar progress-bar-success" style="width:67%"></div>
-                                    </div> <!-- /.progress -->
+                                    <b>Unique ID:</b> <?php echo $set_id; ?>
                                 </div> <!-- /.panel-body -->
                             </div> <!-- /.panel -->
                         </div> <!-- /.col -->
@@ -122,18 +119,19 @@
                                 </div> <!-- /.panel-heading -->
                                 
                                 <div class="panel-body">
-                                    <form id="modify-form" class="form-vertical" action="qs_update.php" method="post" validate>
-                                        <input id="set_id" class="hidden" type="number" name="set_id" value="<?php echo $id; ?>" readonly required>
+                                    <form id="form-qs-update" class="form-vertical" action="/qs_update.php" method="post" validate>
+                                        <input id="referrer" class="hidden" type="text" name="referrer" value="<?php echo $_SERVER['REQUEST_URI']; ?>" readonly required>
+                                        <input id="set_id" class="hidden" type="number" name="set_id" value="<?php echo $set_id; ?>" readonly required>
                                         <fieldset class="form-group label-floating">
                                             <label for="label" class="control-label">Label</label>
-                                            <input id="label" class="form-control" type="text" name="label" value="<?php echo $label; ?>" required>
+                                            <input id="label" class="form-control" type="text" name="label" value="<?php echo htmlspecialchars($label); ?>" required>
                                         </fieldset> <!-- /.form-group -->
                                         
                                         <fieldset>
-                                            <button id="modify-submit" class="btn btn-raised btn-accent" type="submit" form="modify-form">Save</button>
-                                            <button id="modify-delete" class="btn btn-danger" type="submit" form="modify-form">Delete</button>
+                                            <button id="update-qs" class="btn btn-raised btn-accent" type="submit">Save</button>
+                                            <button id="delete-qs" class="btn btn-danger" type="submit">Delete</button>
                                         </fieldset> <!-- /.form-group -->
-                                    </form>
+                                    </form> <!-- /#form-qs-update -->
                                 </div> <!-- /.panel-body -->
                             </div> <!-- /.panel -->
                         </div> <!-- /.col -->
@@ -146,10 +144,14 @@
                             <div class="panel panel-primary">
                                 <div class="panel-heading">
                                     <h3 class="panel-header text-primary light">Questions</h3>
-                                </div>
+                                </div><!-- /.panel-heading -->
+                                
                                 <div class="panel-body">
                                     <?php if ($total_questions == 0) : ?>
-                                    <h3 class="text-center">There are no questions within this set.</h3>
+                                    <h3 class="text-center no-margin">
+                                        There are no questions within this set.<br>
+                                        <small>Click the <i class="material-icons">add</i> icon to add one</small>
+                                    </h3>
                                     <?php else : ?>
                                     <table id="questions" class="table table-striped table-hover">
                                         <thead>
@@ -160,38 +162,40 @@
                                                 <th>Question</th>
                                                 <th class="text-center">Answers</th>
                                                 <th class="text-center"></th>
+                                                <th class="text-center"></th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <?php foreach ($rows as $question) : ?>
-                                                <tr id="<?php echo $question['id']; ?>" class="<?php echo ($question['total_answers'] == 0 ? "warning" : ""); ?>">
+                                            <?php foreach ($rows as $q) : ?>
+                                                <tr id="<?php echo $q['id']; ?>" class="<?php echo ($q['total_answers'] == 0 ? "warning" : ""); ?>">
                                                 <?php
                                                     echo "<td>" . $count++ . "</td>";
-                                                    echo "<td>" . $question['question'] . "</td>";
-                                                    echo "<td class=\"text-center\">" . $question['total_answers'] . "</td>";
+                                                    echo "<td id=\"question\">" . htmlspecialchars($q['question']) . "</td>";
+                                                    echo "<td class=\"text-center\">" . $q['total_answers'] . "</td>";
                                                 ?>
                                                     <td class="text-center"><button id="edit" class="btn btn-sm btn-raised btn-accent">Edit</button></td>
+                                                    <td class="text-center"><button id="delete" class="btn btn-icon btn-danger"><i class="material-icons">delete</i></button></td>
                                                 </tr>
                                             <?php endforeach; ?>
                                         </tbody>
-                                    </table>
+                                    </table> <!-- /#questions -->
                                     <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
-                    </div> <!-- /.col -->
-                </div>
-            </div>
+                                </div> <!-- /.panel-body -->
+                            </div> <!-- /.panel -->
+                        </div> <!-- /.col -->
+                    </div> <!-- /.row -->
+                </div> <!-- /.col -->
+            </div> <!-- /.row -->
             
             <!-- Floating Action Button -->
             <div class="fab">
                 <span data-toggle="tooltip" data-placement="left" title="" data-original-title="Add">
-                    <a href="javascript:void(0);" class="btn btn-fab btn-accent" data-toggle="modal" data-target="#modal-qs-add" role="button"><i class="material-icons">add</i></a>
+                    <a href="javascript:void(0);" class="btn btn-fab btn-accent" data-toggle="modal" data-target="#modal-q-add" role="button"><i class="material-icons">add</i></a>
                 </span>
             </div> <!-- /.fab -->
         
             <!-- Add Question Modal -->
-            <div id="modal-qs-add" class="modal fade" tabindex="-1" role="dialog">
+            <div id="modal-q-add" class="modal fade" tabindex="-1" role="dialog">
                 <div class="modal-dialog" role="document">
                     <div class="modal-content">
                         <div class="modal-body">
@@ -201,7 +205,9 @@
                                 <small>(You can add answers later)</small>
                             </h3>
                             
-                            <form id="form-qs-add" class="form-vertical" action="/qs_add.php" method="post" validate>
+                            <form id="form-q-add" class="form-vertical" action="/q_add.php" method="post" validate>
+                                <input id="referrer" class="hidden" type="text" name="referrer" value="<?php echo $_SERVER['REQUEST_URI']; ?>" readonly required>
+                                <input id="set_id" class="hidden" type="text" name="set_id" value="<?php echo $set_id; ?>" readonly required>
                                 <div class="row clearfix">
                                     <div class="col-xs-12">
                                         <fieldset class="form-group">
@@ -216,8 +222,8 @@
                                 <div class="row clearfix">
                                     <div class="col-xs-12">
                                         <div class="text-right">
-                                            <button id="submit-qs-add" class="btn btn-raised btn-accent" type="submit">Add</button>
-                                            <button id="cancel-qs-add" class="btn btn-default" type="reset" data-dismiss="modal">Cancel</button>
+                                            <button id="submit-q-add" class="btn btn-raised btn-accent" type="submit">Add</button>
+                                            <button id="cancel-q-add" class="btn btn-default" type="reset" data-dismiss="modal">Cancel</button>
                                         </div> <!-- /.text-right -->
                                     </div> <!-- /.col -->
                                 </div> <!-- /.row -->
@@ -226,68 +232,63 @@
                     </div> <!-- /.modal-content -->
                 </div> <!-- /.modal-dialog -->
             </div> <!-- /.modal -->
-        </main>
         
-        <!-- Edit Question Modal -->
-        <div id="qs-edit-modal" class="modal fade" tabindex="-1" role="dialog">
-            <div class="modal-dialog" role="document">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h2 class="modal-title">Edit Question</h2>
-                    </div> <!-- /.modal-header -->
-                    
-                    <div class="modal-body">
-                        <p class="text-medium">WORK IN PROGRESS</p>
-                        <ul class="answers"></ul>
-                    </div>
+            <!-- Edit Question Modal -->
+            <div id="modal-q-update" class="modal fade" tabindex="-1" role="dialog">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-body">
+                            <h2>Edit Question</h2>
+                            <h3 class="text-light text-center">Manage your question and answers below</h3>
+                            
+                            <form id="form-q-update" class="form-vertical" action="/q_update.php" method="post" validate>
+                                <input id="referrer" class="hidden" type="text" name="referrer" value="<?php echo $_SERVER['REQUEST_URI']; ?>" readonly required>
+                                <input id="question_id" class="hidden" type="text" name="question_id" readonly required>
+                                <div class="row clearfix">
+                                    <div class="col-xs-12">
+                                        <fieldset class="form-group">
+                                            <div class="input-group">
+                                                <span class="input-group-addon"><i class="material-icons">label</i></span>
+                                                <input id="question" class="form-control" type="text" name="question" required>
+                                            </div> <!-- /.input-group -->
+                                        </fieldset> <!-- /.form-group -->
+                                    </div> <!-- /.col -->
+                                </div> <!-- /.row -->
+                                
+                                <div id="answers" class="row clearfix">
+                                </div> <!-- /.row -->
+                                
+                                <div class="row clearfix">
+                                    <div class="col-xs-12">
+                                        <fieldset class="form-group">
+                                            <div class="input-group">
+                                                <span class="input-group-addon"><a href="javascript:void(0);" id="answer-add"><i class="material-icons">add_circle</i></a></span>
+                                                <input id="answer-new" class="form-control" type="text" placeholder="New answer">
+                                            </div> <!-- /.input-group -->
+                                        </fieldset> <!-- /.form-group -->
+                                    </div> <!-- /.col -->
+                                </div> <!-- /.row -->
 
-                    <div class="modal-footer">
-                        <button id="qs-edit-submit" class="btn btn-accent" type="submit" form="qs-edit-form">Save</button>
-                        <button id="qs-edit-close" class="btn btn-default" type="reset" form="qs-edit-form" data-dismiss="modal">Close</button>
-                    </div> <!-- /.modal-footer -->
-                </div> <!-- /.modal-content -->
-            </div> <!-- /.modal-dialog -->
-        </div> <!-- /.modal -->
+                                <div class="row clearfix">
+                                    <div class="col-xs-12">
+                                        <div class="text-right">
+                                            <button id="submit-q-update" class="btn btn-raised btn-accent" type="submit">Update</button>
+                                            <button id="cancel-q-update" class="btn btn-default" type="reset" data-dismiss="modal">Cancel</button>
+                                        </div> <!-- /.text-right -->
+                                    </div> <!-- /.col -->
+                                </div> <!-- /.row -->
+                            </form> <!-- /#form-qs-add -->
+                        </div> <!-- /.modal-body -->
+                    </div> <!-- /.modal-content -->
+                </div> <!-- /.modal-dialog -->
+            </div> <!-- /.modal -->
+        </main> <!-- /.container -->
 
         <?php include 'inc/footer.php'; ?>
         <?php include 'inc/notice.php'; ?>
         <?php include 'inc/error.php'; ?>
 
-        <!-- Question Set Modify Validation -->
-        <script type="text/javascript">
-            $(document).ready(function() {
-                var deleteTrigger = false;
-                $('#modify-delete').click(function() {
-                    deleteTrigger = true;
-                    $('#modify-form').attr('action', '/qs_delete.php');
-                });
-
-                $('#modify-form').submit(function() {
-                    if (!deleteTrigger || confirm('Are you sure you want to delete this question set? This cannot be undone.')) {
-                        return true;
-                    }
-                    return false;
-                });
-                
-                $('button[id^="edit"]').click(function() {
-                    $('.answers').empty();
-                    var id = $(this).closest('tr').attr('id');
-                    $.post('/qs_read.php', {qs_id : id})
-                        .done(function(data) {
-                            var json = $.parseJSON(data);
-                            
-                            if (json['valid'] == true) {
-                                for (var key in json) {
-                                    if (json.hasOwnProperty(key) && key != 'valid') {
-                                        $('.answers').append('<li>' + json[key].answer + '</li>');
-                                    }
-                                }
-                            }
-                        });
-                    
-                    $('#qs-edit-modal').modal('show');
-                });
-            });
-        </script>
+        <!-- Custom JavaScript -->
+        <script src="js/view.js"></script>
     </body>
 </html>

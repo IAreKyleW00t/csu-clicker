@@ -5,21 +5,23 @@
 
     /* Check if request method is POST. */
     if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-        /* Check if we have a referrer and default to
+        /* Check if we have a referrer and default to the
             current page if it was not provided. */
         $referrer = $_SERVER['PHP_SELF'];
         if (isset($_POST['referrer'])) {
             $referrer = $_POST['referrer'];
         }
         
-        /* Validate all POST input. These should always be valid. */
+        /* Validate all other POST input. These should always be valid since
+            they are filled via a form on this page. */
         if (!isset($_POST['name']) || !isset($_POST['email']) || !isset($_POST['subject']) || !isset($_POST['message']) || !isset($_POST['g-recaptcha-response'])) {
             $_SESSION['ERROR'] = "Could not process request.<br>Please try again.";
             header('Location: ' . $referrer); //Redirect to previous page
             exit;
         }
 
-        /* Check if email is valid. This should always be true. */
+        /* Check if email is valid. This should always be true since it is
+            validated in our form on this page. */
         $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $_SESSION['ERROR'] = "Invalid email address.<br>Please try again.";
@@ -43,9 +45,6 @@
         $to = "contact@csuoh.io";
         $from = "clicker@csuoh.io";
         $subject = "CSUClicker: $subject";
-
-        /* Format the email message so it is easier for the end-user to read.
-            Also add some other userful information to the email header such as IP, date, etc. */
         $message = "From: $name <$email>\r\n"
                  . "Date: " . date('D, j M Y g:i:sa') . "\r\n"
                  . "IP: " . $_SERVER['REMOTE_ADDR'] . "\r\n\r\n"

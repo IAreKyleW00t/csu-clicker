@@ -9,17 +9,18 @@
         exit;
     }
 
-    /* Attempt to select all questions sets owned/created by the current user and count
-        the total number of questions within each set. Sets without any questions will default to 0.
+    /* Attempt to select all questions sets owned by the current user, count
+        the total number of questions within each set, and get the session ID for the each set if it exists.
+        Sets without any questions will default to 0 and sets without an active session will be NULL.
         If no questions sets are found, then the total rowCount will be 0. To remove duplicate rows, we group each
         row by label and then order it by the ID number. */
-    $query = $sql->prepare('SELECT qs.id, qs.label, COUNT(q.id) AS total_questions FROM question_sets qs LEFT JOIN questions q ON (qs.id = q.set_id) WHERE qs.user_id = ? GROUP BY qs.label ORDER BY qs.id');
+    $query = $sql->prepare('SELECT qs.id, qs.label, COUNT(q.id) AS total_questions, s.id AS sess_id FROM question_sets qs LEFT JOIN questions q ON (qs.id = q.set_id) LEFT JOIN sessions s ON (qs.id = s.set_id AND s.current_question > 0) WHERE qs.user_id = ? GROUP BY qs.label ORDER BY qs.id');
     $query->execute(array(
         $_SESSION['USER_ID']
     ));
 
-    /* Save the data from our search results. This will be used later in the page. */
-    $rows = $query->fetchAll(PDO::FETCH_ASSOC);
+    /* Save the data from our search results. */
+    $rows = $query->fetchAll(PDO::FETCH_ASSOC); //Save all rows
     $total_questions = $query->rowCount();
     $count = 1; //Relative question set number
 ?>
@@ -54,8 +55,8 @@
 
                     <div class="collapse navbar-collapse">
                         <ul class="nav navbar-nav navbar-right">
-                            <li class="active"><a href="/panel">Panel</a></li>
-                            <li><a href="/logout">Logout</a></li>
+                            <li class="active"><a href="/panel.php">Panel</a></li>
+                            <li><a href="/logout.php">Logout</a></li>
                         </ul> <!-- /.navbar-nav -->
                     </div> <!-- /.navbar-collapse -->
                 </div> <!-- /.container -->
@@ -74,18 +75,19 @@
                         <div class="panel-body">
                             <p>
                                 Hi, <b><?php echo htmlspecialchars($_SESSION['USER_FIRST_NAME']); ?></b>!<br>
-                                Welcome to your personal control panel. From here you can create, edit, and delete any questions sets you have.
+                                Welcome to your personal control panel. From here you can create, edit, and delete any of your questions sets.
                                 <br><br>
-                                <b>CSU ID</b>: <?php echo htmlspecialchars(substr_replace($_SESSION['USER_ID'], '***', 0, 3)); ?><br>
+                                <b>CSU ID</b>: <?php echo substr_replace($_SESSION['USER_ID'], '***', 0, 3); ?><br>
                                 <b>Total Question Sets</b>: <?php echo $total_questions; ?>
-                            </p>
+                            </p> <!-- /p -->
                             <hr>
                             <p>
-                                <a href="/change">Change Password</a><br>
-                                <a href="/contact">Need help?</a>
-                            </p>
-                        </div>
-                    </div> <!-- end panel -->
+                                <a href="/change.php">Change password</a><br>
+                                <a href="/contact.php">Need help?</a>
+                            </p> <!-- /p -->
+                        </div> <!-- ./panel-body -->
+                    </div> <!-- /.panel -->
+                    
                     <div class="panel panel-primary">
                         <div class="panel-heading">
                             <h3 class="panel-header text-primary light">Join Session</h3>
@@ -93,13 +95,13 @@
                         
                         <div class="panel-body">
                             <p>Enter in the unique 8-character session token to join a session (ie: <code>4ad7fefa</code>)</p>
-                            <form id="form-session" class="form-vertical" action="/join.php" method="post" validate>
+                            <form id="form-session" class="form-vertical" action="javascript:void(0);" validate>
                                 <div class="row clearfix">
                                     <div class="col-xs-12">
                                         <fieldset class="form-group no-margin">
                                             <div class="input-group">
                                                 <span class="input-group-addon"><i class="material-icons">group_work</i></span>
-                                                <input id="session_token" class="form-control" type="text" name="session_token" title="Unique 8-character session token" pattern="^[a-fA-F0-9]{8}$" placeholder="Session ID" required>
+                                                <input id="token" class="form-control" type="text" name="token" title="Unique 8-character session token" pattern="^[a-fA-F0-9]{8}$" placeholder="Session ID" required>
                                             </div> <!-- /.input-group -->
                                         </fieldset> <!-- /.form-group -->
                                     </div> <!-- /.col -->
@@ -113,9 +115,9 @@
                                     </div> <!-- /.col -->
                                 </div> <!-- /.row -->
                             </form> <!-- /#form-login -->
-                        </div>
-                    </div> <!-- end panel -->
-                </div> <!-- end col-md-4 -->
+                        </div>  <!-- /.panel-body -->
+                    </div> <!-- /.panel -->
+                </div> <!-- /.col -->
 
                 <div class="col-md-8">
                     <div class="panel panel-primary">
@@ -130,7 +132,6 @@
                                 <small>Click the <i class="material-icons">create</i> icon to make one</small>
                             </h3>
                             <?php else : ?>
-                            <p>Below are all the questions sets you've created. Highlighted sets indicate that there is a problem with the set (ie: no questions, invalid answers, etc.)</p>
                             <table id="question-sets" class="table table-striped table-hover">
                                 <thead>
                                     <col width="32">
@@ -140,26 +141,28 @@
                                         <th>Label</th>
                                         <th class="text-center">Questions</th>
                                         <th class="text-center"></th>
+                                        <th class="text-center"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($rows as $set) : ?>
-                                    <tr id="<?php echo $set['id']; ?>" class="<?php echo $set['total_questions'] == 0 ? 'warning' : ''; ?>">
+                                    <?php foreach ($rows as $s) : ?>
+                                    <tr id="<?php echo $s['id']; ?>" class="<?php echo $s['total_questions'] == 0 ? 'warning' : ''; ?>">
                                         <?php
                                             echo '<td>' . $count++ . '</td>';
-                                            echo '<td>' . $set['label'] . '</td>';
-                                            echo '<td class="text-center">' . $set['total_questions'] . '</td>';
+                                            echo '<td>' . htmlspecialchars($s['label']) . '</td>';
+                                            echo '<td class="text-center">' . $s['total_questions'] . '</td>';
                                         ?>
-                                        <td class="text-center"><a href="/view?id=<?php echo $set['id']; ?>" class="btn btn-sm btn-raised btn-accent">View</a></td>
+                                        <td class="text-center"><a href="/view.php?id=<?php echo $s['id']; ?>" class="btn btn-sm btn-raised btn-accent">View</a></td>
+                                        <td class="text-center"><button id="session" class="btn btn-icon <?php echo $s['sess_id'] == null ? 'btn-danger' : 'btn-success'; ?>"><i class="material-icons">people</i></button></td>
                                     </tr>
                                     <?php endforeach; ?>
                                 </tbody>
-                            </table>
+                            </table> <!-- /#question-sets -->
                             <?php endif; ?>
-                        </div>
-                    </div> <!-- end panel -->
-                </div> <!-- end col-md-8 -->
-            </div> <!-- end row -->
+                        </div> <!-- /.panel-body -->
+                    </div> <!-- /.panel -->
+                </div> <!-- /.col -->
+            </div> <!-- /.row -->
             
             <!-- Floating Action Button -->
             <div class="fab">
@@ -204,10 +207,12 @@
                     </div> <!-- /.modal-content -->
                 </div> <!-- /.modal-dialog -->
             </div> <!-- /.modal -->
-        </main> <!-- end container -->
+        </main> <!-- /.container -->
 
         <?php include 'inc/footer.php'; ?>
         <?php include 'inc/notice.php'; ?>
         <?php include 'inc/error.php'; ?>
+        
+        <script src="js/panel.js"></script>
     </body>
 </html>

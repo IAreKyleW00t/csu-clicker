@@ -11,14 +11,15 @@
 
     /* Check if request method is POST. */
     if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-        /* Check if we have a referrer and default to our
-            index page if it was not provided. */
-        $referrer = "/";
+        /* Check if we have a referrer and default to the
+            current page if it was not provided. */
+        $referrer = $_SERVER['PHP_SELF'];
         if (isset($_POST['referrer'])) {
             $referrer = $_POST['referrer'];
         }
         
-        /* Validate all other POST input. These should always be valid. */
+        /* Validate all other POST input. These should always be valid since
+            they are filled via a form on this page. */
         if (!isset($_POST['password_current']) || !isset($_POST['password_new']) || !isset($_POST['password_confirm'])) {
             $_SESSION['ERROR'] = "Could not process request.<br>Please try again.";
             header('Location: ' . $referrer); //Redirect to previous page
@@ -41,8 +42,8 @@
             For extra security, we rotate the password by 13 characters before hashing. */
         $new_hash = password_hash(str_rot13($new_password), PASSWORD_DEFAULT);
 
-        /* Attempt to select the current user from the database. This should never fail, but it helps
-            prevent false USER_ID's from being used. */
+        /* Attempt to select the current user from the database. This should never happen, but it helps
+            prevent false USER_ID's from being used for whatever reason. */
         $query = $sql->prepare('SELECT id AS user_id, hash AS current_hash FROM accounts WHERE id = ? LIMIT 1');
         $query->execute(array(
             $_SESSION['USER_ID']
@@ -116,8 +117,6 @@
                             <h3 class="text-light text-center">Please enter a new password</h3>
                             
                             <form id="form-change" class="form-vertical" action="<?php echo $_SERVER['PHP_SELF']; ?>" method="post" validate>
-                            
-                            <input id="referer" class="hidden" type="text" name="referer" value="<?php echo $_SERVER['PHP_SELF']; ?>" readonly required>
                                 <div class="row clearfix">
                                     <div class="col-xs-12">
                                         <fieldset class="form-group">
@@ -150,7 +149,7 @@
                                     <div class="col-xs-12">
                                         <div class="text-right">
                                             <button id="submit-change" class="btn btn-raised btn-accent" type="submit">Submit</button>
-                                            <a href="/panel" id="cancel-change" class="btn btn-default">Cancel</a>
+                                            <a href="javascript:history.back();" id="cancel-change" class="btn btn-default">Cancel</a>
                                         </div> <!-- /.text-right -->
                                     </div> <!-- /.col -->
                                 </div> <!-- /.row -->
@@ -164,7 +163,10 @@
         <?php include 'inc/footer.php'; ?>
         <?php include 'inc/notice.php'; ?>
         <?php include 'inc/error.php'; ?>
+        
+        <!-- Custom JavaScript -->
         <script>
+            /* Set the "Cancel" button to be what the previous page was. */
             $(document).ready(function() {
                 $('#cancel-change').attr('href', document.referrer);
             });

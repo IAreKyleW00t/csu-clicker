@@ -1,51 +1,64 @@
 <?php
-    /* Load SESSION and SQL Connection */
-    require_once('inc/session.php');
-    $sql = include('inc/sql_connection.php');
-    
-    /* Check if user is logged in and has permission */
-    if (!isset($_SESSION['USER_ID']) || $_SESSION['USER_PERMISSION_LEVEL'] < 2) {
-        header('Location: /'); //Silently redirect to index
+    require_once 'inc/session.php';
+    $sql = include 'inc/sql_connection.php';
+
+    /* Check if user is logged in. If not, silently redirect them
+        to the index page. */
+    if (!isset($_SESSION['USER_ID'])) {
+        header('Location: /');
         exit;
     }
-    
-    /* Check request method is POST */ 
+
+    /* Check if request method is POST. */
     if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-        /* Validate input */
+        /* Check if we have a referrer and default to
+            the panel if it was not provided. */
+        $referrer = "/panel.php";
+        if (isset($_POST['referrer'])) {
+            $referrer = $_POST['referrer'];
+        }
+        
+        /* Validate other POST input. This should always be valid since
+            they are filled via a form on another page. */
         if (!isset($_POST['set_id']) || !isset($_POST['label'])) {
-            $_SESSION['ERROR'] = "Invalid POST request.<br>Please try again.";
-            header('Location: /faculty.php'); //Redirect to faculty page
+            $_SESSION['ERROR'] = "Could not process request.<br>Please try again.";
+            header('Location: ' . $referrer); //Redirect to previous page
             exit;
         }
+
+        /* Save our POST input. (Sanitizing is not needed because we use prepared statements.) */
+        $set_id = $_POST['set_id'];
+        $label = $_POST['label'];
     
-        /* Save and sanitize input */
-        $set_id = htmlspecialchars($_POST['set_id'], ENT_QUOTES, 'UTF-8');
-        $label = htmlspecialchars($_POST['label'], ENT_QUOTES, 'UTF-8');
-    
-        /* Check if the current user is the owner of this question set */
+        /* Check if the current user is the owner of the question set. If they are not, then
+            deny them permission from editing the question set. */
         $query = $sql->prepare('SELECT 1 FROM question_sets WHERE id = ? AND user_id = ? LIMIT 1');
-        $query->execute(array($set_id, $_SESSION['USER_ID']));
+        $query->execute(array(
+            $set_id,
+            $_SESSION['USER_ID']
+        ));
         
-        /* If we do not get exactly 1 result back then this user is not the owner */
+        /* If we do not get EXACTLY one row back, then we know the user is not the owner. */
         if ($query->rowCount() != 1) {
-            $_SESSION['ERROR'] = "You do not have permission to access this question set.";
-            header('Location: /faculty.php'); //Redirect to faculty page
+            $_SESSION['ERROR'] = "You do not have permission to access that question set.";
+            header('Location: ' . $referrer); //Redirect to previous page
             exit;
         }
         
-        /* Update the question set label */
+        /* Update the question set in the database (even if it hasn't changed.) */
         $query = $sql->prepare('UPDATE question_sets SET label = ? WHERE id = ?');
-        $query->execute(array($label, $set_id));
+        $query->execute(array(
+            $label,
+            $set_id
+        ));
         
-        /* Notify the user that this action was successful */
+        /* Notify the user that their action was successful and redirect them back to the previous page. */
         $_SESSION['NOTICE'] = "Question set updated successfully!";
-        
-        /* Redirect to self (refresh) */
-        header('Location: /view.php?id=' . $set_id);
+        header('Location: ' . $referrer); //Redirect to previous page
         exit;
     }
         
-    /* Redirect to faculty page */
-    header('Location: /faculty.php');
+    /* Redirect to index if the request method is not POST. */
+    header('Location: /');
     exit;
 ?>

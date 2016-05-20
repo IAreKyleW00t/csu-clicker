@@ -25,7 +25,7 @@ $(document).click(function(e) {
     }
 });
 
-/* Customer data-toggle to switch between modals. */
+/* Custom data-toggle to switch between modals. */
 $('[data-toggle="switch"]').click(function() {
     var target = $(this).data('target');
     $(this).closest('.modal').modal('hide');
@@ -46,12 +46,10 @@ $('.modal').on('hidden.bs.modal', function() {
 
 /* Automatically hide all fab buttons when scrolling down
     and reshow them when scrolling up. */
-var $window = $(window);
-var pos = $window.scrollTop();
+var pos = null;
 var up = false;
-var scroll;
-$window.scroll(function () {
-    scroll = $window.scrollTop();
+$(window).scroll(function () {
+    var scroll = $(this).scrollTop();
     if (scroll > pos && !up) {
         popupFab(false);
         up = !up;
